@@ -1,17 +1,17 @@
-import os
 from flask import Flask, render_template, request, jsonify
 import arxiv
 import boto3
-from dotenv import load_dotenv
-
-load_dotenv()
+from config import Config
 
 app = Flask(__name__)
+app.config.from_object(Config)
 
 # Initialize AWS Bedrock client
 bedrock = boto3.client(
     service_name='bedrock-runtime',
-    region_name=os.getenv('AWS_DEFAULT_REGION')
+    region_name=app.config['AWS_DEFAULT_REGION'],
+    aws_access_key_id=app.config['AWS_ACCESS_KEY_ID'],
+    aws_secret_access_key=app.config['AWS_SECRET_ACCESS_KEY']
 )
 
 @app.route('/')
@@ -27,7 +27,7 @@ def search():
     # Search arXiv
     search = arxiv.Search(
         query=query,
-        max_results=5,
+        max_results=app.config['MAX_SEARCH_RESULTS'],
         sort_by=arxiv.SortCriterion.Relevance
     )
     
@@ -61,21 +61,21 @@ def analyze_paper():
     4. Suggestions for future research
     5. Related research areas to explore"""
     
-    # Call Claude through AWS Bedrock
-    response = bedrock.invoke_model(
-        modelId='anthropic.claude-3.sonnet-20240229-v1:0',
-        body={
-            'prompt': prompt,
-            'max_tokens': 1000,
-            'temperature': 0.7
-        }
-    )
-    
-    analysis = response['body']['completion']
-    
-    return jsonify({
-        'analysis': analysis
-    })
+    try:
+        # Call Claude through AWS Bedrock
+        response = bedrock.invoke_model(
+            modelId=app.config['CLAUDE_MODEL_ID'],
+            body={
+                'prompt': prompt,
+                'max_tokens': 1000,
+                'temperature': 0.7
+            }
+        )
+        
+        analysis = response['body']['completion']
+        return jsonify({'analysis': analysis})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=app.config['DEBUG'])
