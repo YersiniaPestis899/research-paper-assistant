@@ -1,58 +1,58 @@
 # Research Paper Assistant
 
-A Streamlit-based application that helps researchers analyze academic papers using arXiv API and AWS Bedrock Claude 3.5 Sonnet.
+arXivの論文を検索し、AWS Bedrock Claude AIを使用して分析するツールです。
 
-## Features
+## 機能
 
-- Search for research papers on arXiv
-- Generate paper summaries and key insights using AI
-- Analyze research methodology and findings
-- Get suggestions for related research areas
-- View papers in PDF format
+- arXivからの論文検索（日本語キーワード対応）
+- AIを使用した論文の要約とインサイト生成
+- 研究手法と成果の分析
+- 関連研究領域の提案
+- PDF形式での論文閲覧
 
-## Requirements
+## インストール
 
-- Python 3.8+
-- Streamlit
-- arXiv package
-- Boto3 (AWS SDK)
-- python-dotenv
-
-## Setup
-
-1. Clone the repository
-2. Create and activate a virtual environment:
 ```bash
+# リポジトリのクローン
+git clone https://github.com/YersiniaPestis899/research-paper-assistant.git
+cd research-paper-assistant
+
+# 仮想環境の作成と有効化
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-```
 
-3. Install dependencies:
-```bash
+# 依存パッケージのインストール
 pip install -r requirements.txt
-```
 
-4. Create a .env file with your AWS credentials:
-```bash
+# 環境変数の設定
 cp .env.example .env
 ```
-Then edit .env with your actual AWS credentials.
 
-5. Run the application:
+## 環境設定
+
+.envファイルに以下の情報を設定:
+```
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_DEFAULT_REGION=your_region
+AWS_CLAUDE_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
+```
+
+## 実行方法
+
 ```bash
 streamlit run app.py
 ```
 
-## Usage
+## 使い方
 
-1. Enter your research topic or keywords in the search box
-2. Adjust the maximum number of papers to display
-3. Click "Search" to find relevant papers
-4. For each paper, you can:
-   - View the PDF
-   - Generate AI-powered analysis
-   - Read the summary and details
+1. トピックまたはキーワードを入力（日本語可）
+2. 表示する論文数を選択
+3. 検索結果から論文を選択
+4. PDFの表示やAI分析を実行
 
-## Note
+## 必要要件
 
-This application requires valid AWS credentials with access to AWS Bedrock service. Make sure you have the necessary permissions set up in your AWS account.
+- Python 3.8以上
+- AWS Bedrock APIアクセス権限
+- インターネット接続環境
