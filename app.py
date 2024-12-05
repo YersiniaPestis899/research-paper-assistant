@@ -30,7 +30,6 @@ def search_papers(query, max_results=5):
     
     results = []
     for paper in search.results():
-        # 日本語の著者名が含まれている場合の処理を改善
         authors = [author.name for author in paper.authors]
         
         results.append({
@@ -49,7 +48,7 @@ def search_papers(query, max_results=5):
 def analyze_paper(paper, language="日本語"):
     """Analyze paper using Claude with language selection"""
     if language == "日本語":
-        prompt = f"""以下の研究論文を分析し、日本語で洞察を提供してください：
+        content = f"""以下の研究論文を分析し、日本語で洞察を提供してください：
 
 論文タイトル: {paper['title']}
 著者: {paper['authors']}
@@ -67,7 +66,7 @@ def analyze_paper(paper, language="日本語"):
 それぞれの項目について、できるだけ具体的に説明してください。
 専門用語の説明も適宜加えてください。"""
     else:
-        prompt = f"""Analyze the following research paper and provide insights:
+        content = f"""Analyze the following research paper and provide insights:
 
 Title: {paper['title']}
 Authors: {paper['authors']}
@@ -82,17 +81,38 @@ Please provide:
 5. Related research areas"""
     
     try:
+        request_body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 4096,
+            "top_k": 250,
+            "stop_sequences": [],
+            "temperature": 0.7,
+            "top_p": 0.999,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": content
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        json_body = json.dumps(request_body).encode('utf-8')
+        
         response = bedrock.invoke_model(
             modelId=os.getenv('AWS_CLAUDE_MODEL_ID'),
-            body={
-                'prompt': prompt,
-                'max_tokens': 1000,
-                'temperature': 0.7
-            }
+            contentType="application/json",
+            accept="application/json",
+            body=json_body
         )
         
-        result = json.loads(response.get('body').read().decode('utf-8'))
-        return result['completion']
+        response_body = json.loads(response['body'].read())
+        return response_body['content'][0]['text']
+        
     except Exception as e:
         st.error(f"分析中にエラーが発生しました: {str(e)}")
         return None
