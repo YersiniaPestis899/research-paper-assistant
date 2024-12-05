@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Paper Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Research Paper Assistant</h1>
+        
+        <div class="search-section">
+            <form id="search-form">
+                <input type="text" id="search-input" placeholder="Enter research topic or paper title..." required>
+                <button type="submit">Search</button>
+            </form>
+        </div>
+
+        <div id="results" class="results-section"></div>
+        
+        <div id="analysis" class="analysis-section"></div>
+    </div>
+
+    <script>
+        document.getElementById('search-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = document.getElementById('search-input').value;
+            
+            // Show loading state
+            document.getElementById('results').innerHTML = 'Searching...';
+            
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `query=${encodeURIComponent(query)}`
+                });
+                
+                const papers = await response.json();
+                displayResults(papers);
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('results').innerHTML = 'Error searching papers';
+            }
+        });
+
+        function displayResults(papers) {
+            const resultsDiv = document.getElementById('results');
+            if (papers.length === 0) {
+                resultsDiv.innerHTML = 'No papers found';
+                return;
+            }
+            
+            const papersList = papers.map(paper => `
+                <div class="paper-card">
+                    <h3>${paper.title}</h3>
+                    <p class="authors">Authors: ${paper.authors.join(', ')}</p>
+                    <p class="published">Published: ${paper.published}</p>
+                    <p class="summary">${paper.summary.substring(0, 200)}...</p>
+                    <div class="paper-actions">
+                        <a href="${paper.pdf_url}" target="_blank">View PDF</a>
+                        <button onclick="analyzePaper(${JSON.stringify(paper)})">Analyze</button>
+                    </div>
+                </div>
+            `).join('');
+            
+            resultsDiv.innerHTML = papersList;
+        }
+
+        async function analyzePaper(paper) {
+            const analysisDiv = document.getElementById('analysis');
+            analysisDiv.innerHTML = 'Analyzing paper...';
+            
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(paper)
+                });
+                
+                const result = await response.json();
+                analysisDiv.innerHTML = `
+                    <h2>Analysis Results</h2>
+                    <div class="analysis-content">
+                        ${result.analysis.replace(/\n/g, '<br>')}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error:', error);
+                analysisDiv.innerHTML = 'Error analyzing paper';
+            }
+        }
+    </script>
+</body>
+</html>

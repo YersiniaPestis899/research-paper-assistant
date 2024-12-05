@@ -1,0 +1,102 @@
+body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    color: #333;
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.search-section {
+    margin-bottom: 30px;
+}
+
+#search-form {
+    display: flex;
+    gap: 10px;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+#search-input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+button {
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+.paper-card {
+    background-color: white;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.paper-card h3 {
+    margin-top: 0;
+    color: #333;
+}
+
+.authors {
+    color: #666;
+    font-style: italic;
+}
+
+.published {
+    color: #888;
+    font-size: 0.9em;
+}
+
+.summary {
+    margin: 10px 0;
+}
+
+.paper-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.paper-actions a {
+    text-decoration: none;
+    color: #007bff;
+}
+
+.analysis-section {
+    margin-top: 30px;
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.analysis-content {
+    white-space: pre-line;
+}

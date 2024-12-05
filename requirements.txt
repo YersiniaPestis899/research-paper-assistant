@@ -1,0 +1,6 @@
+flask
+requests
+arxiv
+python-dotenv
+boto3
+markdown
