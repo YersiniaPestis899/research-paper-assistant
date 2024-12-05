@@ -1,10 +1,10 @@
 import streamlit as st
-import arxiv
 import boto3
 import os
 from dotenv import load_dotenv
 import json
-import pandas as pd
+from paper_sources import ArxivSource, BiorxivSource
+from chat_session import ChatSession
 
 # Load environment variables
 load_dotenv()
@@ -20,66 +20,31 @@ bedrock = boto3.client(
     aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
 )
 
-def search_papers(query, max_results=5):
-    """Search papers on arXiv with improved handling of Japanese queries"""
-    search = arxiv.Search(
-        query=query,
-        max_results=max_results,
-        sort_by=arxiv.SortCriterion.Relevance
-    )
-    
-    results = []
-    for paper in search.results():
-        authors = [author.name for author in paper.authors]
-        
-        results.append({
-            'title': paper.title,
-            'authors': ', '.join(authors),
-            'summary': paper.summary,
-            'pdf_url': paper.pdf_url,
-            'published': paper.published.strftime('%Y-%m-%d'),
-            'arxiv_id': paper.entry_id.split('abs/')[-1],
-            'primary_category': paper.primary_category,
-            'categories': paper.categories
-        })
-    
-    return results
+def init_session_state():
+    """Initialize session state variables"""
+    if 'chat_sessions' not in st.session_state:
+        st.session_state.chat_sessions = {}
+    if 'papers' not in st.session_state:
+        st.session_state.papers = []
+    if 'summaries' not in st.session_state:
+        st.session_state.summaries = {}
 
-def analyze_paper(paper, language="日本語"):
-    """Analyze paper using Claude with language selection"""
-    if language == "日本語":
-        content = f"""以下の研究論文を分析し、日本語で洞察を提供してください：
+def get_paper_source(source_name: str):
+    """Get paper source instance based on name"""
+    sources = {
+        'arXiv': ArxivSource(),
+        'bioRxiv': BiorxivSource()
+    }
+    return sources.get(source_name)
 
-論文タイトル: {paper['title']}
-著者: {paper['authors']}
-要約: {paper['summary']}
-分野: {paper['primary_category']}
-
-以下の項目について分析してください：
-
-1. 主要な研究成果と貢献
-2. 研究手法の分析
-3. 潜在的な応用と影響
-4. 今後の研究への提案
-5. 関連する研究分野
-
-それぞれの項目について、できるだけ具体的に説明してください。
-専門用語の説明も適宜加えてください。"""
+def ask_claude(prompt: str, chat_session: ChatSession = None):
+    """Ask Claude with context and return response with citations"""
+    if chat_session:
+        context = chat_session.get_context_for_prompt()
+        full_prompt = f"{context}\n\n新しい質問: {prompt}\n\n上記の質問に対して、論文の内容を引用しながら回答してください。"
     else:
-        content = f"""Analyze the following research paper and provide insights:
+        full_prompt = prompt
 
-Title: {paper['title']}
-Authors: {paper['authors']}
-Abstract: {paper['summary']}
-Field: {paper['primary_category']}
-
-Please provide:
-1. Key findings and contributions
-2. Research methodology analysis
-3. Potential applications and implications
-4. Suggestions for future research
-5. Related research areas"""
-    
     try:
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -94,7 +59,7 @@ Please provide:
                     "content": [
                         {
                             "type": "text",
-                            "text": content
+                            "text": full_prompt
                         }
                     ]
                 }
@@ -114,12 +79,65 @@ Please provide:
         return response_body['content'][0]['text']
         
     except Exception as e:
-        st.error(f"分析中にエラーが発生しました: {str(e)}")
+        st.error(f"エラーが発生しました: {str(e)}")
         return None
 
+def get_japanese_summary(paper):
+    """Get Japanese summary for a paper"""
+    paper_id = paper['id']
+    if paper_id not in st.session_state.summaries:
+        prompt = f"""以下の論文の要約を日本語で提供してください。専門用語は適切に説明し、研究の意義が一般の読者にも伝わるようにしてください：
+
+タイトル: {paper['title']}
+著者: {paper['authors']}
+原文要約: {paper['summary']}
+分野: {paper['primary_category']}"""
+        
+        with st.spinner("要約を翻訳・解説中..."):
+            summary = ask_claude(prompt)
+            if summary:
+                st.session_state.summaries[paper_id] = summary
+                return summary
+            return paper['summary']
+    return st.session_state.summaries[paper_id]
+
+def render_chat_interface(paper_id: str, index: int):
+    """Render chat interface for a specific paper"""
+    if paper_id not in st.session_state.chat_sessions:
+        paper = next(p for p in st.session_state.papers if p['id'] == paper_id)
+        st.session_state.chat_sessions[paper_id] = ChatSession(paper)
+    
+    chat_session = st.session_state.chat_sessions[paper_id]
+    
+    # Display chat history
+    for msg in chat_session.messages:
+        with st.chat_message(msg.role):
+            st.markdown(chat_session.format_message_for_display(msg))
+    
+    # Chat input with unique key
+    if prompt := st.chat_input("論文について質問してください", key=f"chat_input_{paper_id}_{index}"):
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        chat_session.add_message("user", prompt)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("回答を生成中..."):
+                response = ask_claude(prompt, chat_session)
+                if response:
+                    st.markdown(response)
+                    chat_session.add_message("assistant", response)
+
 def main():
+    init_session_state()
+    
     st.title("研究論文アシスタント")
-    st.write("arXivの論文を検索し、AIを使用して分析します")
+    st.write("arXivまたはbioRxivの論文を検索し、AIを使用して分析・質問ができます")
+    
+    # Source selection
+    source = st.selectbox(
+        "論文ソースを選択",
+        ["arXiv", "bioRxiv"]
+    )
     
     # Language selection
     language = st.selectbox(
@@ -144,32 +162,41 @@ def main():
         
         if submitted and query:
             with st.spinner("論文を検索中..."):
-                papers = search_papers(query, max_results)
-                if papers:
-                    st.session_state.papers = papers
-                else:
-                    st.warning("論文が見つかりませんでした")
+                paper_source = get_paper_source(source)
+                if paper_source:
+                    papers = paper_source.search(query, max_results)
+                    if papers:
+                        st.session_state.papers = papers
+                        # Clear summaries when new search is performed
+                        st.session_state.summaries = {}
+                    else:
+                        st.warning("論文が見つかりませんでした")
     
-    # Display results
-    if 'papers' in st.session_state:
-        for i, paper in enumerate(st.session_state.papers):
-            with st.expander(f"{i+1}. {paper['title']}", expanded=True):
+    # Display results in tabs
+    if 'papers' in st.session_state and st.session_state.papers:
+        tabs = st.tabs([f"論文 {i+1}: {paper['title'][:50]}..." for i, paper in enumerate(st.session_state.papers)])
+        
+        for i, (tab, paper) in enumerate(zip(tabs, st.session_state.papers)):
+            with tab:
+                st.markdown(f"## {paper['title']}")
                 st.write(f"**著者:** {paper['authors']}")
                 st.write(f"**公開日:** {paper['published']}")
                 st.write(f"**分野:** {paper['primary_category']}")
-                st.write("**要約:**")
-                st.write(paper['summary'])
+                st.write(f"**ソース:** {paper['source']}")
+                
+                with st.expander("要約を表示"):
+                    if language == "日本語":
+                        st.write(get_japanese_summary(paper))
+                    else:
+                        st.write(paper['summary'])
                 
                 col1, col2 = st.columns(2)
                 with col1:
                     st.link_button("PDFを表示", paper['pdf_url'])
-                with col2:
-                    if st.button("AI分析", key=f"analyze_{i}"):
-                        with st.spinner("論文を分析中..."):
-                            analysis = analyze_paper(paper, language)
-                            if analysis:
-                                st.markdown("## 分析結果")
-                                st.markdown(analysis)
+                
+                # Chat interface for each paper
+                st.markdown("### 論文について質問する")
+                render_chat_interface(paper['id'], i)
 
 if __name__ == "__main__":
     main()
