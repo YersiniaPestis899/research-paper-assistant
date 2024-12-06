@@ -5,8 +5,6 @@ from datetime import datetime
 from dateutil import parser
 from .number_converter import NumberConverter
 import re
-from Bio import Entrez, Medline
-import os
 
 class PaperSource:
     def search(self, query: str, max_results: int) -> List[Dict]:
@@ -121,87 +119,72 @@ class BiorxivSource(PaperSource):
 
 class PubmedSource(PaperSource):
     def __init__(self):
+        self.base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
         self.number_converter = NumberConverter()
-        # デフォルトのメールアドレスを設定
-        Entrez.email = "default@example.com"
-
-    def prepare_query(self, query: str) -> str:
-        """Prepare query for PubMed search with number variants"""
-        if self.number_converter.contains_number(query):
-            variants = self.number_converter.get_all_number_variants(query)
-            return ' OR '.join([f'"{v}"' for v in variants])
-        return query
-
+        
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
+        search_url = f"{self.base_url}/esearch.fcgi"
+        search_params = {
+            "db": "pubmed",
+            "term": query,
+            "retmax": max_results,
+            "sort": "relevance",
+            "retmode": "json"
+        }
+        
         try:
-            processed_query = self.prepare_query(query)
+            search_response = requests.get(search_url, params=search_params)
+            search_data = search_response.json()
             
-            # 論文の検索
-            handle = Entrez.esearch(
-                db="pubmed",
-                term=processed_query,
-                retmax=max_results,
-                sort="relevance"
-            )
-            search_results = Entrez.read(handle)
-            handle.close()
-
-            if not search_results["IdList"]:
+            if "esearchresult" not in search_data or "idlist" not in search_data["esearchresult"]:
                 return []
-
-            # 検索結果の詳細情報を取得
-            handle = Entrez.efetch(
-                db="pubmed",
-                id=','.join(search_results["IdList"]),
-                rettype="medline",
-                retmode="text"
-            )
-            records = list(Medline.parse(handle))
-            handle.close()
+            
+            paper_ids = search_data["esearchresult"]["idlist"]
+            
+            summary_url = f"{self.base_url}/esummary.fcgi"
+            summary_params = {
+                "db": "pubmed",
+                "id": ",".join(paper_ids),
+                "retmode": "json"
+            }
+            
+            summary_response = requests.get(summary_url, params=summary_params)
+            summary_data = summary_response.json()
             
             results = []
-            for record in records:
-                # 著者名のフォーマット
-                authors = record.get('AU', [])
-                if isinstance(authors, str):
-                    authors = [authors]
-                authors_str = ', '.join(authors)
-
-                # タイトルの取得と整形
-                title = record.get('TI', 'No title')
-                if isinstance(title, (list, tuple)):
-                    title = ' '.join(title)
-
-                # アブストラクトの取得と整形
-                abstract = record.get('AB', 'No abstract available')
-                if isinstance(abstract, (list, tuple)):
-                    abstract = ' '.join(abstract)
-
-                # PubMed Central IDがある場合はPDFリンクを生成
-                pdf_url = f"https://pubmed.ncbi.nlm.nih.gov/{record['PMID']}/"
-                if 'PMC' in record:
-                    pdf_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/{record['PMC']}/pdf"
-
-                # カテゴリー（MeSH terms）の取得
-                categories = record.get('MH', ['Medicine'])
-                if isinstance(categories, str):
-                    categories = [categories]
-
+            for paper_id in paper_ids:
+                paper = summary_data["result"][paper_id]
+                
+                # Get authors
+                authors_list = []
+                if "authors" in paper:
+                    for author in paper["authors"]:
+                        if "name" in author:
+                            authors_list.append(author["name"])
+                
+                # Get title (removing trailing period if exists)
+                title = paper.get("title", "No title").rstrip('.')
+                
+                # Get abstract
+                abstract = ""
+                if "abstract" in paper:
+                    abstract = paper["abstract"]
+                
                 results.append({
                     'title': title,
-                    'authors': authors_str,
+                    'authors': ", ".join(authors_list) if authors_list else "No authors available",
                     'summary': abstract,
-                    'pdf_url': pdf_url,
-                    'published': record.get('DP', 'Unknown date'),
-                    'id': record['PMID'],
+                    'pdf_url': f"https://pubmed.ncbi.nlm.nih.gov/{paper_id}/",
+                    'published': paper.get("pubdate", "Unknown date"),
+                    'id': paper_id,
                     'source': 'PubMed',
-                    'primary_category': categories[0],
-                    'categories': categories,
-                    'raw_data': record
+                    'primary_category': "Medicine",
+                    'categories': ["Medicine"],
+                    'raw_data': paper
                 })
-
+            
             return results
-
+            
         except Exception as e:
             print(f"Error searching PubMed: {e}")
             return []
