@@ -22,6 +22,8 @@ def init_session_state():
         st.session_state.papers = []
     if 'summaries' not in st.session_state:
         st.session_state.summaries = {}
+    if 'expanded_papers' not in st.session_state:
+        st.session_state.expanded_papers = set()
 
 def get_paper_source(source_name: str):
     """Get paper source instance based on name"""
@@ -126,8 +128,9 @@ def main():
                     papers = paper_source.search(query, max_results)
                     if papers:
                         st.session_state.papers = papers
-                        # Clear summaries when new search is performed
+                        # Clear summaries and expanded state when new search is performed
                         st.session_state.summaries = {}
+                        st.session_state.expanded_papers = set()
                     else:
                         st.warning("論文が見つかりませんでした")
     
@@ -143,11 +146,19 @@ def main():
                 st.write(f"**分野:** {paper['primary_category']}")
                 st.write(f"**ソース:** {paper['source']}")
                 
-                with st.expander("要約を表示"):
-                    if language == "日本語":
-                        st.write(get_japanese_summary(paper))
+                # 要約の表示をクリック時のみ生成するように変更
+                if st.button("要約を表示/非表示", key=f"summary_button_{paper['id']}"):
+                    if paper['id'] in st.session_state.expanded_papers:
+                        st.session_state.expanded_papers.remove(paper['id'])
                     else:
-                        st.write(paper['summary'])
+                        st.session_state.expanded_papers.add(paper['id'])
+                
+                if paper['id'] in st.session_state.expanded_papers:
+                    with st.container():
+                        if language == "日本語":
+                            st.write(get_japanese_summary(paper))
+                        else:
+                            st.write(paper['summary'])
                 
                 col1, col2 = st.columns(2)
                 with col1:
