@@ -3,8 +3,8 @@ import boto3
 import os
 from dotenv import load_dotenv
 import json
-from paper_sources import ArxivSource, BiorxivSource
-from chat_session import ChatSession
+from research_paper_assistant.paper_sources import ArxivSource, BiorxivSource
+from research_paper_assistant.chat_session import ChatSession
 
 # Load environment variables
 load_dotenv()
