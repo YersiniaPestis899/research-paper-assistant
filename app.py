@@ -1,21 +1,15 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from research_paper_assistant.paper_sources import ArxivSource, BiorxivSource
+from research_paper_assistant.paper_sources import ArxivSource, BiorxivSource, PubmedSource
 from research_paper_assistant.chat_session import ChatSession
 from research_paper_assistant.bedrock_client import BedrockClient
 
-# Load environment variables
 load_dotenv()
-
-# Set page config for Japanese support
 st.set_page_config(page_title="研究論文アシスタント", layout="wide")
-
-# Initialize Bedrock client with retry logic
 bedrock = BedrockClient(max_retries=3, retry_delay=1.0)
 
 def init_session_state():
-    """Initialize session state variables"""
     if 'chat_sessions' not in st.session_state:
         st.session_state.chat_sessions = {}
     if 'papers' not in st.session_state:
@@ -26,25 +20,22 @@ def init_session_state():
         st.session_state.expanded_papers = set()
 
 def get_paper_source(source_name: str):
-    """Get paper source instance based on name"""
     sources = {
         'arXiv': ArxivSource(),
-        'bioRxiv': BiorxivSource()
+        'bioRxiv': BiorxivSource(),
+        'PubMed': PubmedSource()
     }
     return sources.get(source_name)
 
 def ask_claude(prompt: str, chat_session: ChatSession = None):
-    """Ask Claude with context and return response with citations"""
     if chat_session:
         context = chat_session.get_context_for_prompt()
         full_prompt = f"{context}\n\n新しい質問: {prompt}\n\n上記の質問に対して、論文の内容を引用しながら回答してください。"
     else:
         full_prompt = prompt
-
     return bedrock.invoke_model(full_prompt)
 
 def get_japanese_summary(paper):
-    """Get Japanese summary for a paper"""
     paper_id = paper['id']
     if paper_id not in st.session_state.summaries:
         prompt = f"""以下の論文の要約を日本語で提供してください。専門用語は適切に説明し、研究の意義が一般の読者にも伝わるようにしてください：
@@ -63,19 +54,16 @@ def get_japanese_summary(paper):
     return st.session_state.summaries[paper_id]
 
 def render_chat_interface(paper_id: str, index: int):
-    """Render chat interface for a specific paper"""
     if paper_id not in st.session_state.chat_sessions:
         paper = next(p for p in st.session_state.papers if p['id'] == paper_id)
         st.session_state.chat_sessions[paper_id] = ChatSession(paper)
     
     chat_session = st.session_state.chat_sessions[paper_id]
     
-    # Display chat history
     for msg in chat_session.messages:
         with st.chat_message(msg.role):
             st.markdown(chat_session.format_message_for_display(msg))
     
-    # Chat input with unique key
     if prompt := st.chat_input("論文について質問してください", key=f"chat_input_{paper_id}_{index}"):
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -92,21 +80,11 @@ def main():
     init_session_state()
     
     st.title("研究論文アシスタント")
-    st.write("arXivまたはbioRxivの論文を検索し、AIを使用して分析・質問ができます")
+    st.write("arXiv、bioRxiv、PubMedの論文を検索し、AIを使用して分析・質問ができます")
     
-    # Source selection
-    source = st.selectbox(
-        "論文ソースを選択",
-        ["arXiv", "bioRxiv"]
-    )
+    source = st.selectbox("論文ソースを選択", ["arXiv", "bioRxiv", "PubMed"])
+    language = st.selectbox("言語を選択", ["日本語", "English"])
     
-    # Language selection
-    language = st.selectbox(
-        "言語を選択",
-        ["日本語", "English"]
-    )
-    
-    # Search section
     with st.form("search_form"):
         query = st.text_input("研究トピックまたはキーワードを入力してください")
         
@@ -114,10 +92,7 @@ def main():
         with col1:
             max_results = st.slider("表示する論文数", 1, 10, 5)
         with col2:
-            sort_order = st.selectbox(
-                "並び順",
-                ["関連度順", "最新順"]
-            )
+            sort_order = st.selectbox("並び順", ["関連度順", "最新順"])
             
         submitted = st.form_submit_button("検索")
         
@@ -128,13 +103,11 @@ def main():
                     papers = paper_source.search(query, max_results)
                     if papers:
                         st.session_state.papers = papers
-                        # Clear summaries and expanded state when new search is performed
                         st.session_state.summaries = {}
                         st.session_state.expanded_papers = set()
                     else:
                         st.warning("論文が見つかりませんでした")
     
-    # Display results in tabs
     if 'papers' in st.session_state and st.session_state.papers:
         tabs = st.tabs([f"論文 {i+1}: {paper['title'][:50]}..." for i, paper in enumerate(st.session_state.papers)])
         
@@ -146,7 +119,6 @@ def main():
                 st.write(f"**分野:** {paper['primary_category']}")
                 st.write(f"**ソース:** {paper['source']}")
                 
-                # 要約の表示をクリック時のみ生成するように変更
                 if st.button("要約を表示/非表示", key=f"summary_button_{paper['id']}"):
                     if paper['id'] in st.session_state.expanded_papers:
                         st.session_state.expanded_papers.remove(paper['id'])
@@ -164,7 +136,6 @@ def main():
                 with col1:
                     st.link_button("PDFを表示", paper['pdf_url'])
                 
-                # Chat interface for each paper
                 st.markdown("### 論文について質問する")
                 render_chat_interface(paper['id'], i)
 
