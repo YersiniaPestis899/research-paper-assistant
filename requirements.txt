@@ -6,4 +6,3 @@ boto3
 markdown
 pandas
 python-dateutil
-biopython
