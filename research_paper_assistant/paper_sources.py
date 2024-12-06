@@ -3,6 +3,7 @@ import requests
 from typing import List, Dict
 from datetime import datetime
 from dateutil import parser
+from .number_converter import NumberConverter
 
 class PaperSource:
     def search(self, query: str, max_results: int) -> List[Dict]:
@@ -36,8 +37,11 @@ class ArxivSource(PaperSource):
 class BiorxivSource(PaperSource):
     def __init__(self):
         self.base_url = "https://api.biorxiv.org/details/biorxiv"
+        self.number_converter = NumberConverter()
         
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
+        # bioRxiv APIは直接キーワード検索をサポートしていないため
+        # 最新の論文を取得して、タイトルとアブストラクトでフィルタリング
         response = requests.get(f"{self.base_url}/2024-01-01/2024-12-31/0/200")
         if response.status_code != 200:
             return []
@@ -45,16 +49,26 @@ class BiorxivSource(PaperSource):
         data = response.json()
         if 'collection' not in data:
             return []
-            
-        query = query.lower()
+        
+        # フィルタリング関数の定義
+        def matches_query(text: str, q: str) -> bool:
+            if self.number_converter.contains_number(q):
+                return self.number_converter.is_number_match(text, q)
+            else:
+                return q.lower() in text.lower()
+        
+        # キーワードでフィルタリング
         filtered_papers = []
         for paper in data['collection']:
-            if (query in paper.get('title', '').lower() or 
-                query in paper.get('abstract', '').lower()):
+            title = paper.get('title', '')
+            abstract = paper.get('abstract', '')
+            
+            if matches_query(title, query) or matches_query(abstract, query):
                 filtered_papers.append(paper)
                 if len(filtered_papers) >= max_results:
                     break
         
+        # 結果を整形
         formatted_results = []
         for paper in filtered_papers:
             try:
