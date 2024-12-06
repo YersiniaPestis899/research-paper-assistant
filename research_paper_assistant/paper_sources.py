@@ -17,29 +17,21 @@ class ArxivSource(PaperSource):
     def prepare_query(self, query: str) -> str:
         """
         Prepare query for case-insensitive search in arXiv
-        - Convert to lowercase
-        - Handle number variants
-        - Add wildcards for case-insensitive search
         """
-        # Split query into words
         words = query.lower().split()
         processed_words = []
         
         for word in words:
             if self.number_converter.contains_number(word):
-                # For numbers, add all variants with OR
                 variants = self.number_converter.get_all_number_variants(word)
                 processed_words.append(f"({' OR '.join(variants)})")
             else:
-                # Add both lowercase and capitalized versions
-                # Use regex to properly handle special characters in arXiv search
                 word = re.escape(word)
                 processed_words.append(f"(*{word}* OR *{word.capitalize()}*)")
         
         return " AND ".join(processed_words)
 
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
-        # Prepare case-insensitive query
         processed_query = self.prepare_query(query)
         
         search = arxiv.Search(
@@ -123,68 +115,66 @@ class PubmedSource(PaperSource):
         self.number_converter = NumberConverter()
         
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
-        search_url = f"{self.base_url}/esearch.fcgi"
-        search_params = {
-            "db": "pubmed",
-            "term": query,
-            "retmax": max_results,
-            "sort": "relevance",
-            "retmode": "json"
-        }
-        
         try:
-            search_response = requests.get(search_url, params=search_params)
-            search_data = search_response.json()
-            
-            if "esearchresult" not in search_data or "idlist" not in search_data["esearchresult"]:
-                return []
-            
-            paper_ids = search_data["esearchresult"]["idlist"]
-            
-            summary_url = f"{self.base_url}/esummary.fcgi"
-            summary_params = {
+            # 検索URL
+            search_url = f"{self.base_url}/esearch.fcgi"
+            search_params = {
                 "db": "pubmed",
-                "id": ",".join(paper_ids),
+                "term": query,
+                "retmax": max_results,
                 "retmode": "json"
             }
             
-            summary_response = requests.get(summary_url, params=summary_params)
-            summary_data = summary_response.json()
-            
+            search_response = requests.get(search_url, params=search_params)
+            if not search_response.ok:
+                return []
+                
+            search_data = search_response.json()
+            if 'esearchresult' not in search_data or 'idlist' not in search_data['esearchresult']:
+                return []
+                
             results = []
-            for paper_id in paper_ids:
-                paper = summary_data["result"][paper_id]
+            for pmid in search_data['esearchresult']['idlist']:
+                # 論文の詳細情報を取得
+                summary_url = f"{self.base_url}/esummary.fcgi"
+                summary_params = {
+                    "db": "pubmed",
+                    "id": pmid,
+                    "retmode": "json"
+                }
                 
-                # Get authors
-                authors_list = []
-                if "authors" in paper:
-                    for author in paper["authors"]:
-                        if "name" in author:
-                            authors_list.append(author["name"])
+                summary_response = requests.get(summary_url, params=summary_params)
+                if not summary_response.ok:
+                    continue
+                    
+                details = summary_response.json()
+                if 'result' not in details or pmid not in details['result']:
+                    continue
+                    
+                paper = details['result'][pmid]
                 
-                # Get title (removing trailing period if exists)
-                title = paper.get("title", "No title").rstrip('.')
-                
-                # Get abstract
-                abstract = ""
-                if "abstract" in paper:
-                    abstract = paper["abstract"]
+                # 著者リストの整形
+                authors = []
+                for author in paper.get('authors', []):
+                    name = author.get('name', '')
+                    if name:
+                        authors.append(name)
                 
                 results.append({
-                    'title': title,
-                    'authors': ", ".join(authors_list) if authors_list else "No authors available",
-                    'summary': abstract,
-                    'pdf_url': f"https://pubmed.ncbi.nlm.nih.gov/{paper_id}/",
-                    'published': paper.get("pubdate", "Unknown date"),
-                    'id': paper_id,
+                    'title': paper.get('title', 'No title').strip(),
+                    'authors': ', '.join(authors),
+                    'summary': paper.get('abstract', 'No abstract available'),
+                    'pdf_url': f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                    'published': paper.get('pubdate', 'Unknown date'),
+                    'id': pmid,
                     'source': 'PubMed',
-                    'primary_category': "Medicine",
-                    'categories': ["Medicine"],
+                    'primary_category': 'Medicine',
+                    'categories': ['Medicine'],
                     'raw_data': paper
                 })
             
             return results
             
         except Exception as e:
-            print(f"Error searching PubMed: {e}")
+            print(f"PubMed search error: {e}")
             return []
