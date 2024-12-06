@@ -5,6 +5,8 @@ from datetime import datetime
 from dateutil import parser
 from .number_converter import NumberConverter
 import re
+from Bio import Entrez, Medline
+import os
 
 class PaperSource:
     def search(self, query: str, max_results: int) -> List[Dict]:
@@ -71,8 +73,6 @@ class BiorxivSource(PaperSource):
         self.number_converter = NumberConverter()
         
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
-        # bioRxiv APIは直接キーワード検索をサポートしていないため
-        # 最新の論文を取得して、タイトルとアブストラクトでフィルタリング
         response = requests.get(f"{self.base_url}/2024-01-01/2024-12-31/0/200")
         if response.status_code != 200:
             return []
@@ -81,14 +81,12 @@ class BiorxivSource(PaperSource):
         if 'collection' not in data:
             return []
         
-        # フィルタリング関数の定義
         def matches_query(text: str, q: str) -> bool:
             if self.number_converter.contains_number(q):
                 return self.number_converter.is_number_match(text, q)
             else:
                 return q.lower() in text.lower()
         
-        # キーワードでフィルタリング
         filtered_papers = []
         for paper in data['collection']:
             title = paper.get('title', '')
@@ -99,7 +97,6 @@ class BiorxivSource(PaperSource):
                 if len(filtered_papers) >= max_results:
                     break
         
-        # 結果を整形
         formatted_results = []
         for paper in filtered_papers:
             try:
@@ -121,3 +118,90 @@ class BiorxivSource(PaperSource):
             })
         
         return formatted_results
+
+class PubmedSource(PaperSource):
+    def __init__(self):
+        self.number_converter = NumberConverter()
+        # デフォルトのメールアドレスを設定
+        Entrez.email = "default@example.com"
+
+    def prepare_query(self, query: str) -> str:
+        """Prepare query for PubMed search with number variants"""
+        if self.number_converter.contains_number(query):
+            variants = self.number_converter.get_all_number_variants(query)
+            return ' OR '.join([f'"{v}"' for v in variants])
+        return query
+
+    def search(self, query: str, max_results: int = 5) -> List[Dict]:
+        try:
+            processed_query = self.prepare_query(query)
+            
+            # 論文の検索
+            handle = Entrez.esearch(
+                db="pubmed",
+                term=processed_query,
+                retmax=max_results,
+                sort="relevance"
+            )
+            search_results = Entrez.read(handle)
+            handle.close()
+
+            if not search_results["IdList"]:
+                return []
+
+            # 検索結果の詳細情報を取得
+            handle = Entrez.efetch(
+                db="pubmed",
+                id=','.join(search_results["IdList"]),
+                rettype="medline",
+                retmode="text"
+            )
+            records = list(Medline.parse(handle))
+            handle.close()
+            
+            results = []
+            for record in records:
+                # 著者名のフォーマット
+                authors = record.get('AU', [])
+                if isinstance(authors, str):
+                    authors = [authors]
+                authors_str = ', '.join(authors)
+
+                # タイトルの取得と整形
+                title = record.get('TI', 'No title')
+                if isinstance(title, (list, tuple)):
+                    title = ' '.join(title)
+
+                # アブストラクトの取得と整形
+                abstract = record.get('AB', 'No abstract available')
+                if isinstance(abstract, (list, tuple)):
+                    abstract = ' '.join(abstract)
+
+                # PubMed Central IDがある場合はPDFリンクを生成
+                pdf_url = f"https://pubmed.ncbi.nlm.nih.gov/{record['PMID']}/"
+                if 'PMC' in record:
+                    pdf_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/{record['PMC']}/pdf"
+
+                # カテゴリー（MeSH terms）の取得
+                categories = record.get('MH', ['Medicine'])
+                if isinstance(categories, str):
+                    categories = [categories]
+
+                results.append({
+                    'title': title,
+                    'authors': authors_str,
+                    'summary': abstract,
+                    'pdf_url': pdf_url,
+                    'published': record.get('DP', 'Unknown date'),
+                    'id': record['PMID'],
+                    'source': 'PubMed',
+                    'primary_category': categories[0],
+                    'categories': categories,
+                    'raw_data': record
+                })
+
+            return results
+
+        except Exception as e:
+            print(f"Error searching PubMed: {e}")
+            return []
