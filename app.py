@@ -1,10 +1,9 @@
 import streamlit as st
-import boto3
 import os
 from dotenv import load_dotenv
-import json
 from research_paper_assistant.paper_sources import ArxivSource, BiorxivSource
 from research_paper_assistant.chat_session import ChatSession
+from research_paper_assistant.bedrock_client import BedrockClient
 
 # Load environment variables
 load_dotenv()
@@ -12,13 +11,8 @@ load_dotenv()
 # Set page config for Japanese support
 st.set_page_config(page_title="研究論文アシスタント", layout="wide")
 
-# Initialize AWS Bedrock client
-bedrock = boto3.client(
-    service_name='bedrock-runtime',
-    region_name=os.getenv('AWS_DEFAULT_REGION'),
-    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-)
+# Initialize Bedrock client with retry logic
+bedrock = BedrockClient(max_retries=3, retry_delay=1.0)
 
 def init_session_state():
     """Initialize session state variables"""
@@ -45,42 +39,7 @@ def ask_claude(prompt: str, chat_session: ChatSession = None):
     else:
         full_prompt = prompt
 
-    try:
-        request_body = {
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 4096,
-            "top_k": 250,
-            "stop_sequences": [],
-            "temperature": 0.7,
-            "top_p": 0.999,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": full_prompt
-                        }
-                    ]
-                }
-            ]
-        }
-        
-        json_body = json.dumps(request_body).encode('utf-8')
-        
-        response = bedrock.invoke_model(
-            modelId=os.getenv('AWS_CLAUDE_MODEL_ID'),
-            contentType="application/json",
-            accept="application/json",
-            body=json_body
-        )
-        
-        response_body = json.loads(response['body'].read())
-        return response_body['content'][0]['text']
-        
-    except Exception as e:
-        st.error(f"エラーが発生しました: {str(e)}")
-        return None
+    return bedrock.invoke_model(full_prompt)
 
 def get_japanese_summary(paper):
     """Get Japanese summary for a paper"""
