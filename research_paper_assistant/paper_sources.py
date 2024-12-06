@@ -4,15 +4,46 @@ from typing import List, Dict
 from datetime import datetime
 from dateutil import parser
 from .number_converter import NumberConverter
+import re
 
 class PaperSource:
     def search(self, query: str, max_results: int) -> List[Dict]:
         raise NotImplementedError
 
 class ArxivSource(PaperSource):
+    def __init__(self):
+        self.number_converter = NumberConverter()
+
+    def prepare_query(self, query: str) -> str:
+        """
+        Prepare query for case-insensitive search in arXiv
+        - Convert to lowercase
+        - Handle number variants
+        - Add wildcards for case-insensitive search
+        """
+        # Split query into words
+        words = query.lower().split()
+        processed_words = []
+        
+        for word in words:
+            if self.number_converter.contains_number(word):
+                # For numbers, add all variants with OR
+                variants = self.number_converter.get_all_number_variants(word)
+                processed_words.append(f"({' OR '.join(variants)})")
+            else:
+                # Add both lowercase and capitalized versions
+                # Use regex to properly handle special characters in arXiv search
+                word = re.escape(word)
+                processed_words.append(f"(*{word}* OR *{word.capitalize()}*)")
+        
+        return " AND ".join(processed_words)
+
     def search(self, query: str, max_results: int = 5) -> List[Dict]:
+        # Prepare case-insensitive query
+        processed_query = self.prepare_query(query)
+        
         search = arxiv.Search(
-            query=query,
+            query=processed_query,
             max_results=max_results,
             sort_by=arxiv.SortCriterion.Relevance
         )
