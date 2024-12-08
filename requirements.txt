@@ -1,0 +1,10 @@
+streamlit>=1.24.0
+arxiv
+requests
+python-dotenv
+boto3
+markdown
+pandas
+python-dateutil
+beautifulsoup4
+lxml
